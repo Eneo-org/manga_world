@@ -1,0 +1,65 @@
+name: Build
+
+# Crea gli eseguibili per Windows, macOS e Linux.
+# Pubblicando un tag (es. `git tag v1.0 && git push --tags`) vengono allegati a una Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: MangaWorldDownloader-Windows
+          - os: macos-latest
+            artifact: MangaWorldDownloader-macOS
+          - os: ubuntu-latest
+            artifact: MangaWorldDownloader-Linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller --onefile --windowed --name MangaWorldDownloader main.py
+          Compress-Archive dist/MangaWorldDownloader.exe ${{ matrix.artifact }}.zip
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller --windowed --name MangaWorldDownloader main.py
+          cd dist && ditto -c -k --keepParent MangaWorldDownloader.app ../${{ matrix.artifact }}.zip
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          pyinstaller --onefile --name MangaWorldDownloader main.py
+          cd dist && zip ../${{ matrix.artifact }}.zip MangaWorldDownloader
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: "*.zip"
